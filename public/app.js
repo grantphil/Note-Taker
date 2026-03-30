@@ -1,7 +1,5 @@
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
-const transcribeBtn = document.getElementById('transcribeBtn');
-const summarizeBtn = document.getElementById('summarizeBtn');
 const copyBtn = document.getElementById('copyBtn');
 const transcriptEl = document.getElementById('transcript');
 const notesEl = document.getElementById('notes');
@@ -9,54 +7,23 @@ const statusEl = document.getElementById('status');
 const timerEl = document.getElementById('timer');
 const contextEl = document.getElementById('context');
 const captureSystemAudioEl = document.getElementById('captureSystemAudio');
-const apiBaseUrlEl = document.getElementById('apiBaseUrl');
 
 let mediaRecorder;
 let mixedStream;
 let micStream;
 let displayStream;
-let audioBlob;
 let chunks = [];
 let timerInterval;
 let seconds = 0;
 
-const API_BASE_STORAGE_KEY = 'note_taker_api_base_url';
+const API_BASE = (window.NOTE_TAKER_API_BASE || '').replace(/\/$/, '');
+
+function apiUrl(pathname) {
+  return API_BASE ? `${API_BASE}${pathname}` : pathname;
+}
 
 function setStatus(text) {
   statusEl.textContent = text;
-}
-
-function normalizeApiBase(base) {
-  const trimmed = (base || '').trim();
-  if (!trimmed) {
-    return '';
-  }
-  return trimmed.replace(/\/$/, '');
-}
-
-function buildApiUrl(pathname) {
-  const configuredBase = normalizeApiBase(apiBaseUrlEl.value);
-  if (!configuredBase) {
-    return pathname;
-  }
-
-  if (!/^https?:\/\//.test(configuredBase)) {
-    throw new Error('API base URL must start with http:// or https://');
-  }
-
-  return `${configuredBase}${pathname}`;
-}
-
-function saveApiBaseUrl() {
-  localStorage.setItem(API_BASE_STORAGE_KEY, normalizeApiBase(apiBaseUrlEl.value));
-}
-
-function loadApiBaseUrl() {
-  const saved = localStorage.getItem(API_BASE_STORAGE_KEY);
-  if (saved) {
-    apiBaseUrlEl.value = saved;
-    setStatus(`Using API base: ${saved}`);
-  }
 }
 
 function formatTime(totalSec) {
@@ -112,19 +79,69 @@ function cleanupStreams() {
   });
 }
 
-apiBaseUrlEl.addEventListener('change', () => {
-  saveApiBaseUrl();
-  setStatus('API base URL saved');
-});
+async function transcribeAudio(audioBlob) {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'meeting.webm');
+
+  const response = await fetch(apiUrl('/api/transcribe'), {
+    method: 'POST',
+    body: formData
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Transcription failed');
+  }
+
+  return data.transcript || '';
+}
+
+async function summarizeTranscript(transcript) {
+  const response = await fetch(apiUrl('/api/summarize'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transcript,
+      meetingContext: contextEl.value.trim()
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Summarization failed');
+  }
+
+  return data.notes || '';
+}
+
+async function processRecording() {
+  try {
+    setStatus('Transcribing audio...');
+    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+    const transcript = await transcribeAudio(audioBlob);
+    transcriptEl.value = transcript;
+
+    setStatus('Generating notes...');
+    const notes = await summarizeTranscript(transcript);
+    notesEl.textContent = notes;
+    copyBtn.disabled = !notes.trim();
+
+    setStatus('Done. Notes ready to copy.');
+  } catch (error) {
+    console.error(error);
+    setStatus(`Processing failed: ${error.message}`);
+  } finally {
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+}
 
 startBtn.addEventListener('click', async () => {
   try {
     chunks = [];
-    audioBlob = null;
-    transcribeBtn.disabled = true;
-    summarizeBtn.disabled = true;
-    copyBtn.disabled = true;
+    transcriptEl.value = '';
     notesEl.textContent = '';
+    copyBtn.disabled = true;
 
     mixedStream = await buildMixedStream();
     mediaRecorder = new MediaRecorder(mixedStream, { mimeType: 'audio/webm' });
@@ -135,10 +152,9 @@ startBtn.addEventListener('click', async () => {
       }
     };
 
-    mediaRecorder.onstop = () => {
-      audioBlob = new Blob(chunks, { type: 'audio/webm' });
-      transcribeBtn.disabled = false;
+    mediaRecorder.onstop = async () => {
       cleanupStreams();
+      await processRecording();
     };
 
     mediaRecorder.start(1000);
@@ -150,6 +166,8 @@ startBtn.addEventListener('click', async () => {
     console.error(error);
     setStatus(`Unable to start recording: ${error.message}`);
     cleanupStreams();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
   }
 });
 
@@ -157,81 +175,11 @@ stopBtn.addEventListener('click', () => {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     return;
   }
+
+  setStatus('Stopping recording...');
   mediaRecorder.stop();
-  startBtn.disabled = false;
   stopBtn.disabled = true;
-  setStatus('Recording stopped');
   stopTimer();
-});
-
-transcribeBtn.addEventListener('click', async () => {
-  if (!audioBlob) {
-    return;
-  }
-
-  try {
-    saveApiBaseUrl();
-    setStatus('Transcribing audio...');
-    transcribeBtn.disabled = true;
-
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'meeting.webm');
-
-    const response = await fetch(buildApiUrl('/api/transcribe'), {
-      method: 'POST',
-      body: formData
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Transcription failed');
-    }
-
-    transcriptEl.value = data.transcript || '';
-    summarizeBtn.disabled = !transcriptEl.value.trim();
-    setStatus('Transcription complete');
-  } catch (error) {
-    console.error(error);
-    setStatus(`Transcription failed: ${error.message}`);
-    transcribeBtn.disabled = false;
-  }
-});
-
-summarizeBtn.addEventListener('click', async () => {
-  try {
-    const transcript = transcriptEl.value.trim();
-    if (!transcript) {
-      setStatus('Transcript is empty.');
-      return;
-    }
-
-    saveApiBaseUrl();
-    setStatus('Generating meeting notes...');
-    summarizeBtn.disabled = true;
-
-    const response = await fetch(buildApiUrl('/api/summarize'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        transcript,
-        meetingContext: contextEl.value.trim()
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Summarization failed');
-    }
-
-    notesEl.textContent = data.notes || '';
-    copyBtn.disabled = !notesEl.textContent.trim();
-    setStatus('Notes ready');
-  } catch (error) {
-    console.error(error);
-    setStatus(`Failed to generate notes: ${error.message}`);
-  } finally {
-    summarizeBtn.disabled = false;
-  }
 });
 
 copyBtn.addEventListener('click', async () => {
@@ -243,5 +191,3 @@ copyBtn.addEventListener('click', async () => {
     setStatus('Could not copy notes.');
   }
 });
-
-loadApiBaseUrl();

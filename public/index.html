@@ -10,19 +10,11 @@
     <main class="container">
       <h1>Teams Meeting Note Taker</h1>
       <p class="lead">
-        Record audio during your meeting, transcribe it, and generate polished account/project manager notes.
+        Hit record, run your meeting, stop recording, and the app auto-generates polished call notes.
       </p>
 
       <section class="card">
-        <h2>1) API + Meeting Setup</h2>
-        <label for="apiBaseUrl">API base URL (required on GitHub Pages):</label>
-        <input
-          id="apiBaseUrl"
-          type="text"
-          placeholder="https://your-backend.example.com"
-          autocomplete="off"
-        />
-        <small class="hint">Leave blank for local backend on the same host (e.g., localhost:3000).</small>
+        <h2>Record</h2>
 
         <label for="context">Meeting context (optional):</label>
         <textarea id="context" rows="3" placeholder="Project name, attendees, objective, customer info..."></textarea>
@@ -35,27 +27,24 @@
         <div class="row">
           <button id="startBtn">Start Recording</button>
           <button id="stopBtn" disabled>Stop Recording</button>
+          <button id="copyBtn" disabled>Copy Notes</button>
           <span id="status">Idle</span>
         </div>
         <div id="timer">00:00</div>
       </section>
 
       <section class="card">
-        <h2>2) Transcript</h2>
-        <button id="transcribeBtn" disabled>Transcribe Recording</button>
-        <textarea id="transcript" rows="12" placeholder="Transcript will appear here..."></textarea>
+        <h2>Transcript</h2>
+        <textarea id="transcript" rows="12" placeholder="Transcript will appear after recording stops..."></textarea>
       </section>
 
       <section class="card">
-        <h2>3) AI-Formatted Notes</h2>
-        <div class="row">
-          <button id="summarizeBtn" disabled>Generate Meeting Notes</button>
-          <button id="copyBtn" disabled>Copy Notes</button>
-        </div>
+        <h2>AI-Formatted Notes</h2>
         <pre id="notes"></pre>
       </section>
     </main>
 
+    <script src="config.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

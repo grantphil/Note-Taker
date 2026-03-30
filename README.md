@@ -2,11 +2,24 @@
 
 A lightweight web app for capturing meeting audio on your PC, transcribing it with OpenAI, and producing polished account-manager/project-manager style notes that are easy to paste into an email.
 
+## What changed (quick-start UX)
+
+The app now supports a **single primary flow**:
+
+1. Open app
+2. Click **Start Recording**
+3. Click **Stop Recording**
+4. Wait while it auto-transcribes + auto-generates notes
+5. Click **Copy Notes**
+
+No API setup section is shown in the UI.
+
 ## Features
 
 - Record microphone audio during live calls.
 - Optional attempt to capture system/tab audio (browser permission required).
-- One-click transcription of recorded audio.
+- Automatic transcription after recording stops.
+- Automatic AI note generation right after transcription.
 - AI-generated structured notes with:
   - Meeting snapshot
   - Key topics
@@ -44,7 +57,7 @@ A lightweight web app for capturing meeting audio on your PC, transcribing it wi
    ```bash
    npm start
    ```
-5. Open `http://localhost:3000`.
+5. Open `http://localhost:3000` and just hit record.
 
 ## Deploying live with GitHub Pages + backend API
 
@@ -61,7 +74,18 @@ GitHub Pages can host the frontend UI, but **not** the Node API server. You must
    - `POST https://your-backend-domain/api/transcribe`
    - `POST https://your-backend-domain/api/summarize`
 
-### B) Enable GitHub Pages deployment action
+### B) Configure frontend API endpoint (no UI setup needed)
+
+Set `window.NOTE_TAKER_API_BASE` in `public/config.js`:
+
+```js
+window.NOTE_TAKER_API_BASE = 'https://your-backend-domain';
+```
+
+- Leave it blank (`''`) for same-origin local usage.
+- This keeps the UI simple while still allowing Pages-to-backend routing.
+
+### C) Enable GitHub Pages deployment action
 
 This repo includes `.github/workflows/deploy-pages.yml`, which deploys `public/` to GitHub Pages on pushes to `main`.
 
@@ -70,24 +94,14 @@ This repo includes `.github/workflows/deploy-pages.yml`, which deploys `public/`
 3. Push to `main` (or run the workflow manually in the Actions tab).
 4. Open your Pages URL (typically `https://<user>.github.io/<repo>/`).
 
-### C) Connect frontend to backend
-
-On the live Pages site:
-1. Paste your backend URL into **API base URL** (e.g. `https://your-backend-domain`).
-2. The app stores this value in browser localStorage.
-3. Start recording and run transcription/summarization as usual.
-
 ## Usage
 
-1. Enter API base URL (required on GitHub Pages, optional locally).
-2. Enter optional meeting context (participants, customer, objective).
-3. Click **Start Recording**.
-4. If you need system audio, enable the checkbox before recording and allow screen/tab audio when prompted.
-5. Click **Stop Recording** when the meeting or section ends.
-6. Click **Transcribe Recording**.
-7. Review/edit transcript.
-8. Click **Generate Meeting Notes**.
-9. Click **Copy Notes** and paste into your email.
+1. (Optional) Enter meeting context.
+2. Click **Start Recording**.
+3. If you need system audio, enable the checkbox before recording and allow screen/tab audio when prompted.
+4. Click **Stop Recording**.
+5. Wait for auto transcription + note generation.
+6. Click **Copy Notes** and paste into your email.
 
 ## Notes on Teams audio capture
 
