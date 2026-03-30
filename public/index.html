@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teams Meeting Note Taker</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Teams Meeting Note Taker</h1>
+      <p class="lead">
+        Record audio during your meeting, transcribe it, and generate polished account/project manager notes.
+      </p>
+
+      <section class="card">
+        <h2>1) Meeting Setup</h2>
+        <label for="context">Meeting context (optional):</label>
+        <textarea id="context" rows="3" placeholder="Project name, attendees, objective, customer info..."></textarea>
+
+        <label class="checkbox-row">
+          <input id="captureSystemAudio" type="checkbox" />
+          Try to capture system audio (browser will ask for screen/tab share)
+        </label>
+
+        <div class="row">
+          <button id="startBtn">Start Recording</button>
+          <button id="stopBtn" disabled>Stop Recording</button>
+          <span id="status">Idle</span>
+        </div>
+        <div id="timer">00:00</div>
+      </section>
+
+      <section class="card">
+        <h2>2) Transcript</h2>
+        <button id="transcribeBtn" disabled>Transcribe Recording</button>
+        <textarea id="transcript" rows="12" placeholder="Transcript will appear here..."></textarea>
+      </section>
+
+      <section class="card">
+        <h2>3) AI-Formatted Notes</h2>
+        <div class="row">
+          <button id="summarizeBtn" disabled>Generate Meeting Notes</button>
+          <button id="copyBtn" disabled>Copy Notes</button>
+        </div>
+        <pre id="notes"></pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
