@@ -94,6 +94,17 @@ This repo includes `.github/workflows/deploy-pages.yml`, which deploys `public/`
 3. Push to `main` (or run the workflow manually in the Actions tab).
 4. Open your Pages URL (typically `https://<user>.github.io/<repo>/`).
 
+
+### Troubleshooting: "Processing failed: Failed to fetch"
+
+This means the frontend could not reach the backend API.
+
+- **Local run:** start backend with `npm start` and open `http://localhost:3000`.
+- **GitHub Pages run:** either
+  - set `window.NOTE_TAKER_API_BASE` in `public/config.js`, or
+  - open the site with `?api_base=https://your-backend-domain` (for quick testing).
+- Ensure backend CORS allows your Pages origin via `CORS_ORIGIN`.
+
 ## Usage
 
 1. (Optional) Enter meeting context.

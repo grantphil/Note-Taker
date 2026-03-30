@@ -16,7 +16,13 @@ let chunks = [];
 let timerInterval;
 let seconds = 0;
 
-const API_BASE = (window.NOTE_TAKER_API_BASE || '').replace(/\/$/, '');
+function resolveApiBase() {
+  const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
+  const configValue = window.NOTE_TAKER_API_BASE || '';
+  return (queryValue || configValue).replace(/\/$/, '');
+}
+
+const API_BASE = resolveApiBase();
 
 function apiUrl(pathname) {
   return API_BASE ? `${API_BASE}${pathname}` : pathname;
@@ -44,6 +50,26 @@ function startTimer() {
 
 function stopTimer() {
   clearInterval(timerInterval);
+}
+
+function formatFetchError(error) {
+  const isNetworkError = error instanceof TypeError && error.message.toLowerCase().includes('fetch');
+  if (!isNetworkError) {
+    return error.message;
+  }
+
+  return [
+    'Cannot reach transcription API.',
+    'If running locally, start backend with npm start and open http://localhost:3000.',
+    'If using GitHub Pages, set window.NOTE_TAKER_API_BASE in public/config.js or use ?api_base=https://your-backend.'
+  ].join(' ');
+}
+
+async function ensureApiReachable() {
+  const response = await fetch(apiUrl('/api/health'));
+  if (!response.ok) {
+    throw new Error('API health check failed.');
+  }
 }
 
 async function buildMixedStream() {
@@ -116,6 +142,9 @@ async function summarizeTranscript(transcript) {
 
 async function processRecording() {
   try {
+    setStatus('Checking API connection...');
+    await ensureApiReachable();
+
     setStatus('Transcribing audio...');
     const audioBlob = new Blob(chunks, { type: 'audio/webm' });
     const transcript = await transcribeAudio(audioBlob);
@@ -129,7 +158,7 @@ async function processRecording() {
     setStatus('Done. Notes ready to copy.');
   } catch (error) {
     console.error(error);
-    setStatus(`Processing failed: ${error.message}`);
+    setStatus(`Processing failed: ${formatFetchError(error)}`);
   } finally {
     startBtn.disabled = false;
     stopBtn.disabled = true;
@@ -191,3 +220,7 @@ copyBtn.addEventListener('click', async () => {
     setStatus('Could not copy notes.');
   }
 });
+
+if (API_BASE) {
+  setStatus(`Ready (API base: ${API_BASE})`);
+}
