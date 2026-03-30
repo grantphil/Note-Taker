@@ -9,6 +9,7 @@ const statusEl = document.getElementById('status');
 const timerEl = document.getElementById('timer');
 const contextEl = document.getElementById('context');
 const captureSystemAudioEl = document.getElementById('captureSystemAudio');
+const apiBaseUrlEl = document.getElementById('apiBaseUrl');
 
 let mediaRecorder;
 let mixedStream;
@@ -19,8 +20,43 @@ let chunks = [];
 let timerInterval;
 let seconds = 0;
 
+const API_BASE_STORAGE_KEY = 'note_taker_api_base_url';
+
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function normalizeApiBase(base) {
+  const trimmed = (base || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/\/$/, '');
+}
+
+function buildApiUrl(pathname) {
+  const configuredBase = normalizeApiBase(apiBaseUrlEl.value);
+  if (!configuredBase) {
+    return pathname;
+  }
+
+  if (!/^https?:\/\//.test(configuredBase)) {
+    throw new Error('API base URL must start with http:// or https://');
+  }
+
+  return `${configuredBase}${pathname}`;
+}
+
+function saveApiBaseUrl() {
+  localStorage.setItem(API_BASE_STORAGE_KEY, normalizeApiBase(apiBaseUrlEl.value));
+}
+
+function loadApiBaseUrl() {
+  const saved = localStorage.getItem(API_BASE_STORAGE_KEY);
+  if (saved) {
+    apiBaseUrlEl.value = saved;
+    setStatus(`Using API base: ${saved}`);
+  }
 }
 
 function formatTime(totalSec) {
@@ -76,6 +112,11 @@ function cleanupStreams() {
   });
 }
 
+apiBaseUrlEl.addEventListener('change', () => {
+  saveApiBaseUrl();
+  setStatus('API base URL saved');
+});
+
 startBtn.addEventListener('click', async () => {
   try {
     chunks = [];
@@ -129,13 +170,14 @@ transcribeBtn.addEventListener('click', async () => {
   }
 
   try {
+    saveApiBaseUrl();
     setStatus('Transcribing audio...');
     transcribeBtn.disabled = true;
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'meeting.webm');
 
-    const response = await fetch('/api/transcribe', {
+    const response = await fetch(buildApiUrl('/api/transcribe'), {
       method: 'POST',
       body: formData
     });
@@ -163,10 +205,11 @@ summarizeBtn.addEventListener('click', async () => {
       return;
     }
 
+    saveApiBaseUrl();
     setStatus('Generating meeting notes...');
     summarizeBtn.disabled = true;
 
-    const response = await fetch('/api/summarize', {
+    const response = await fetch(buildApiUrl('/api/summarize'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -200,3 +243,5 @@ copyBtn.addEventListener('click', async () => {
     setStatus('Could not copy notes.');
   }
 });
+
+loadApiBaseUrl();

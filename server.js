@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const cors = require('cors');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -8,6 +9,7 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 const port = process.env.PORT || 3000;
+const corsOrigin = process.env.CORS_ORIGIN || '*';
 
 if (!process.env.OPENAI_API_KEY) {
   // eslint-disable-next-line no-console
@@ -16,6 +18,7 @@ if (!process.env.OPENAI_API_KEY) {
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
