@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teams Meeting Note Taker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Teams Meeting Note Taker</h1>
+      <p class="lead">
+        Hit record to start live transcription while you talk. When you stop, the app finalizes transcript and auto-generates polished call notes.
+      </p>
+
+      <section class="card">
+        <h2>Record</h2>
+
+        <label for="context">Meeting context (optional):</label>
+        <textarea id="context" rows="3" placeholder="Project name, attendees, objective, customer info..."></textarea>
+
+        <label class="checkbox-row">
+          <input id="captureSystemAudio" type="checkbox" />
+          Try to capture system audio (browser will ask for screen/tab share)
+        </label>
+
+        <div class="row">
+          <button id="startBtn">Start Recording</button>
+          <button id="stopBtn" disabled>Stop Recording</button>
+          <button id="copyBtn" disabled>Copy Notes</button>
+          <span id="status">Idle</span>
+        </div>
+        <div id="timer">00:00</div>
+      </section>
+
+      <section class="card">
+        <h2>Live Transcript</h2>
+        <textarea id="transcript" rows="12" placeholder="Transcript appears live while recording..."></textarea>
+      </section>
+
+      <section class="card">
+        <h2>AI-Formatted Notes</h2>
+        <pre id="notes"></pre>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
