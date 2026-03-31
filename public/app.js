@@ -65,6 +65,20 @@ function formatFetchError(error) {
   ].join(' ');
 }
 
+
+function parseJsonSafely(rawText) {
+  try {
+    return JSON.parse(rawText);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function formatNonJsonApiError(endpoint, rawText) {
+  const sample = (rawText || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return `Received non-JSON response from ${endpoint}. This usually means NOTE_TAKER_API_BASE points to a website/HTML page instead of your backend API. Sample: ${sample}`;
+}
+
 async function ensureApiReachable() {
   try {
     const response = await fetch(apiUrl('/api/health'));
@@ -75,7 +89,15 @@ async function ensureApiReachable() {
       };
     }
 
-    const health = await response.json();
+    const rawText = await response.text();
+    const health = parseJsonSafely(rawText);
+
+    if (!health) {
+      return {
+        ok: false,
+        message: formatNonJsonApiError('/api/health', rawText)
+      };
+    }
 
     if (!health.apiKeyConfigured) {
       throw new Error(
@@ -140,7 +162,13 @@ async function transcribeAudio(audioBlob) {
     body: formData
   });
 
-  const data = await response.json();
+  const rawText = await response.text();
+  const data = parseJsonSafely(rawText);
+
+  if (!data) {
+    throw new Error(formatNonJsonApiError('/api/transcribe', rawText));
+  }
+
   if (!response.ok) {
     throw new Error(data.error || 'Transcription failed');
   }
@@ -158,7 +186,13 @@ async function summarizeTranscript(transcript) {
     })
   });
 
-  const data = await response.json();
+  const rawText = await response.text();
+  const data = parseJsonSafely(rawText);
+
+  if (!data) {
+    throw new Error(formatNonJsonApiError('/api/summarize', rawText));
+  }
+
   if (!response.ok) {
     throw new Error(data.error || 'Summarization failed');
   }
