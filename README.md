@@ -86,6 +86,22 @@ For the app to work end-to-end, all of these must be true:
 
 GitHub Pages can host the frontend UI, but **not** the Node API server. You must deploy `server.js` to a Node host (Render, Railway, Fly.io, Azure, etc.), then point the Pages site to that backend.
 
+
+### Quick path: Render backend domain (Option B)
+
+I added `render.yaml` so you can create a backend domain with minimal setup.
+
+1. Push this repo to GitHub.
+2. In Render, choose **New + → Blueprint** and select this repo.
+3. Render will create service `note-taker-api` from `render.yaml`.
+4. Set env vars in Render dashboard:
+   - `OPENAI_API_KEY`
+   - `CORS_ORIGIN=https://<your-github-username>.github.io`
+5. Deploy, then copy your backend URL (example: `https://note-taker-api.onrender.com`).
+6. Set `window.NOTE_TAKER_API_BASE` in `public/config.js` to that URL and redeploy Pages frontend.
+
+I cannot directly create cloud domains from this environment, but this is ready for one-click provisioning in your Render account.
+
 ### A) Deploy backend API
 
 1. Deploy this repo (or backend files) to your Node host.
