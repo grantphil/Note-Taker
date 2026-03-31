@@ -1,0 +1,18 @@
+{
+  "name": "note-taker",
+  "version": "1.0.0",
+  "description": "Teams meeting audio recorder and AI meeting notes generator",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.79.2"
+  }
+}
