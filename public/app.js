@@ -15,10 +15,8 @@ let displayStream;
 let chunks = [];
 let timerInterval;
 let seconds = 0;
-let chunkSequence = 0;
-let chunkProcessingChain = Promise.resolve();
-
-const CHUNK_MS = 15000;
+let recognition;
+let liveTranscriptFinal = '';
 
 function resolveApiBase() {
   const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
@@ -123,6 +121,70 @@ async function ensureApiReachable() {
   }
 }
 
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    let interim = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const text = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        liveTranscriptFinal = `${liveTranscriptFinal} ${text}`.trim();
+      } else {
+        interim += text;
+      }
+    }
+
+    transcriptEl.value = `${liveTranscriptFinal} ${interim}`.trim();
+  };
+
+  recognition.onerror = () => {
+    setStatus('Live browser speech transcription unavailable; final backend transcription will still run.');
+  };
+
+  recognition.onend = () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      recognition.start();
+    }
+  };
+}
+
+function startSpeechRecognition() {
+  if (!recognition) {
+    return;
+  }
+
+  try {
+    recognition.start();
+  } catch (_error) {
+    // no-op for redundant starts
+  }
+}
+
+function stopSpeechRecognition() {
+  if (!recognition) {
+    return;
+  }
+
+  recognition.onend = null;
+
+  try {
+    recognition.stop();
+  } catch (_error) {
+    // no-op
+  }
+}
+
 async function buildMixedStream() {
   const audioContext = new AudioContext();
   const destination = audioContext.createMediaStreamDestination();
@@ -179,49 +241,6 @@ async function transcribeAudio(audioBlob) {
   return data.transcript || '';
 }
 
-async function transcribeChunk(chunkBlob, sequence) {
-  const formData = new FormData();
-  formData.append('audio', chunkBlob, `chunk-${sequence}.webm`);
-  formData.append('sequence', String(sequence));
-
-  const response = await fetch(apiUrl('/api/transcribe-chunk'), {
-    method: 'POST',
-    body: formData
-  });
-
-  const rawText = await response.text();
-  const data = parseJsonSafely(rawText);
-
-  if (!data) {
-    throw new Error(formatNonJsonApiError('/api/transcribe-chunk', rawText));
-  }
-
-  if (!response.ok) {
-    throw new Error(`${data.error || 'Chunk transcription failed'} ${data.details || ''}`.trim());
-  }
-
-  return data.chunkTranscript || '';
-}
-
-function queueChunkTranscription(chunkBlob) {
-  const currentSequence = chunkSequence;
-
-  chunkProcessingChain = chunkProcessingChain
-    .then(async () => {
-      const chunkText = await transcribeChunk(chunkBlob, currentSequence);
-      if (chunkText.trim()) {
-        transcriptEl.value = `${transcriptEl.value}\n${chunkText}`.trim();
-      }
-      setStatus('Live transcription updated...');
-    })
-    .catch((error) => {
-      console.error(error);
-      setStatus(`Live transcription warning: ${formatFetchError(error)}`);
-    });
-
-  return chunkProcessingChain;
-}
-
 async function summarizeTranscript(transcript) {
   const response = await fetch(apiUrl('/api/summarize'), {
     method: 'POST',
@@ -256,17 +275,10 @@ async function processRecording() {
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    setStatus('Finishing live transcription...');
-    await chunkProcessingChain;
-
-    let transcript = transcriptEl.value.trim();
-
-    if (!transcript) {
-      setStatus('Live transcript empty, running full transcription...');
-      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-      transcript = await transcribeAudio(audioBlob);
-      transcriptEl.value = transcript;
-    }
+    setStatus('Running full transcription from captured audio (mic + desktop)...');
+    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+    const transcript = await transcribeAudio(audioBlob);
+    transcriptEl.value = transcript;
 
     setStatus('Generating notes...');
     const notes = await summarizeTranscript(transcript);
@@ -286,8 +298,7 @@ async function processRecording() {
 startBtn.addEventListener('click', async () => {
   try {
     chunks = [];
-    chunkSequence = 0;
-    chunkProcessingChain = Promise.resolve();
+    liveTranscriptFinal = '';
     transcriptEl.value = '';
     notesEl.textContent = '';
     copyBtn.disabled = true;
@@ -298,24 +309,27 @@ startBtn.addEventListener('click', async () => {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunks.push(event.data);
-        chunkSequence += 1;
-        queueChunkTranscription(event.data);
       }
     };
 
     mediaRecorder.onstop = async () => {
+      stopSpeechRecognition();
       cleanupStreams();
       await processRecording();
     };
 
-    mediaRecorder.start(CHUNK_MS);
+    initSpeechRecognition();
+    startSpeechRecognition();
+
+    mediaRecorder.start(1000);
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    setStatus('Recording + live transcription...');
+    setStatus('Recording + live browser transcription...');
     startTimer();
   } catch (error) {
     console.error(error);
     setStatus(`Unable to start recording: ${error.message}`);
+    stopSpeechRecognition();
     cleanupStreams();
     startBtn.disabled = false;
     stopBtn.disabled = true;
