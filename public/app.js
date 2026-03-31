@@ -66,17 +66,35 @@ function formatFetchError(error) {
 }
 
 async function ensureApiReachable() {
-  const response = await fetch(apiUrl('/api/health'));
-  if (!response.ok) {
-    throw new Error('API health check failed.');
-  }
+  try {
+    const response = await fetch(apiUrl('/api/health'));
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: 'Health endpoint is unavailable. Continuing anyway...'
+      };
+    }
 
-  const health = await response.json();
+    const health = await response.json();
 
-  if (!health.apiKeyConfigured) {
-    throw new Error(
-      'Backend is reachable, but OPENAI_API_KEY is missing. Add OPENAI_API_KEY to backend env and restart.'
-    );
+    if (!health.apiKeyConfigured) {
+      throw new Error(
+        'Backend is reachable, but OPENAI_API_KEY is missing. Add OPENAI_API_KEY to backend env and restart.'
+      );
+    }
+
+    return { ok: true };
+  } catch (error) {
+    const isNetworkError = error instanceof TypeError && error.message.toLowerCase().includes('fetch');
+
+    if (isNetworkError) {
+      throw error;
+    }
+
+    return {
+      ok: false,
+      message: error.message
+    };
   }
 }
 
@@ -151,7 +169,12 @@ async function summarizeTranscript(transcript) {
 async function processRecording() {
   try {
     setStatus('Checking API connection...');
-    await ensureApiReachable();
+    const health = await ensureApiReachable();
+
+    if (!health.ok) {
+      setStatus(health.message);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
 
     setStatus('Transcribing audio...');
     const audioBlob = new Blob(chunks, { type: 'audio/webm' });
