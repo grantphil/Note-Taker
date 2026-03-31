@@ -357,14 +357,24 @@ async function transcribeCapturedAudioInSegments() {
   for (let i = 0; i < segments.length; i += 1) {
     const sequence = i + 1;
     setStatus(`Transcribing segment ${sequence}/${segments.length}...`);
-    const part = await transcribeChunkWithRetry(segments[i], sequence);
-    if (part.trim()) {
-      transcriptParts.push(part.trim());
-      transcriptEl.value = transcriptParts.join('\n');
+
+    try {
+      const part = await transcribeChunkWithRetry(segments[i], sequence);
+      if (part.trim()) {
+        transcriptParts.push(part.trim());
+        transcriptEl.value = transcriptParts.join('\n');
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus(`Segment ${sequence} failed after retries. Continuing with remaining audio...`);
     }
   }
 
   return transcriptParts.join('\n').trim();
+}
+
+function getLiveTranscriptSnapshot() {
+  return [liveSpeechTranscript, liveBackendTranscript].filter(Boolean).join('\n').trim();
 }
 
 async function summarizeTranscript(transcript) {
@@ -410,9 +420,22 @@ async function processRecording() {
 
     if (!transcript) {
       setStatus('Segment transcript empty, trying single-pass transcription...');
-      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-      transcript = await transcribeAudio(audioBlob);
-      transcriptEl.value = transcript;
+      try {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        transcript = await transcribeAudio(audioBlob);
+        transcriptEl.value = transcript;
+      } catch (singlePassError) {
+        console.error(singlePassError);
+        const liveSnapshot = getLiveTranscriptSnapshot();
+        if (liveSnapshot) {
+          transcript = liveSnapshot;
+          transcriptEl.value = liveSnapshot;
+          setStatus('Using live transcript fallback due backend transcription connection issues...');
+          await wait(1200);
+        } else {
+          throw singlePassError;
+        }
+      }
     }
 
     setStatus('Generating notes...');
