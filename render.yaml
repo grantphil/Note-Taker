@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: note-taker-api
+    env: node
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        sync: false
