@@ -10,7 +10,7 @@ The app now supports a **single primary flow**:
 2. Click **Start Recording**
 3. Click **Stop Recording**
 4. Watch transcript populate live while recording
-5. Wait while backend finalizes transcript in segments from captured meeting audio (mic + desktop)
+5. Watch live transcript stream throughout the meeting (mic + desktop), then stop to immediately generate notes
 6. Click **Copy Notes**
 
 
@@ -20,8 +20,9 @@ No API setup section is shown in the UI.
 
 - Record microphone audio during live calls.
 - Optional attempt to capture system/tab audio (browser permission required).
-- Live browser speech transcript during recording (for immediate visibility), then full backend transcription at stop for stronger accuracy and desktop-audio coverage.
+- Live browser speech transcript + live backend mixed-audio transcript during recording, then immediate note generation at stop.
 - Automatic AI note generation right after transcription.
+- If backend summarization fails, the app produces a copyable fallback note draft from captured transcript plus a ready-to-paste ChatGPT prompt.
 - AI-generated structured notes with:
   - Meeting snapshot
   - Key topics
@@ -153,7 +154,7 @@ This means the frontend could not reach the backend API.
 2. Click **Start Recording**.
 3. If you need system audio, enable the checkbox before recording and allow screen/tab audio when prompted.
 4. Click **Stop Recording**.
-5. Watch live transcript while recording, then wait for final segmented backend transcription + note generation after stop.
+5. Watch live transcript while recording, then stop to generate notes from the live combined transcript.
 6. Click **Copy Notes** and paste into your email.
 
 ## Notes on Teams audio capture

@@ -24,7 +24,7 @@ let liveBackendBuffer = [];
 let liveBackendChain = Promise.resolve();
 
 const FINAL_BATCH_SIZE = 45;
-const LIVE_DESKTOP_BATCH_SIZE = 30;
+const LIVE_DESKTOP_BATCH_SIZE = 4;
 
 function resolveApiBase() {
   const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
@@ -343,36 +343,6 @@ function flushLiveBackendBuffer(force = false) {
   queueLiveBackendTranscription(blob);
 }
 
-async function transcribeCapturedAudioInSegments() {
-  const segments = [];
-
-  for (let i = 0; i < chunks.length; i += FINAL_BATCH_SIZE) {
-    const group = chunks.slice(i, i + FINAL_BATCH_SIZE);
-    const segmentBlob = new Blob(group, { type: 'audio/webm' });
-    segments.push(segmentBlob);
-  }
-
-  const transcriptParts = [];
-
-  for (let i = 0; i < segments.length; i += 1) {
-    const sequence = i + 1;
-    setStatus(`Transcribing segment ${sequence}/${segments.length}...`);
-
-    try {
-      const part = await transcribeChunkWithRetry(segments[i], sequence);
-      if (part.trim()) {
-        transcriptParts.push(part.trim());
-        transcriptEl.value = transcriptParts.join('\n');
-      }
-    } catch (error) {
-      console.error(error);
-      setStatus(`Segment ${sequence} failed after retries. Continuing with remaining audio...`);
-    }
-  }
-
-  return transcriptParts.join('\n').trim();
-}
-
 function getLiveTranscriptSnapshot() {
   return [liveSpeechTranscript, liveBackendTranscript].filter(Boolean).join('\n').trim();
 }
@@ -401,7 +371,27 @@ async function summarizeTranscript(transcript) {
   return data.notes || '';
 }
 
+function buildFallbackNotes(transcript, errorMessage) {
+  const cleanedTranscript = (transcript || '').trim();
+
+  return `# Meeting Notes (Fallback Draft)
+
+**Status:** Auto-generated fallback because live summarization failed.
+**Reason:** ${errorMessage}
+
+## Captured Transcript
+${cleanedTranscript || 'No transcript captured.'}
+
+## Suggested Next Step
+Copy the transcript above into ChatGPT with this prompt:
+
+"Please convert this meeting transcript into professional Account Manager / Project Manager notes with sections for: Meeting Snapshot, Key Topics, Decisions, Action Items (Owner + Due Date), Risks, Open Questions, and Follow-up Email Draft."
+`;
+}
+
 async function processRecording() {
+  let transcript = '';
+
   try {
     setStatus('Checking API connection...');
     const health = await ensureApiReachable();
@@ -415,27 +405,17 @@ async function processRecording() {
       throw new Error('No audio captured. Please retry recording.');
     }
 
-    setStatus('Finalizing transcript from captured meeting audio...');
-    let transcript = await transcribeCapturedAudioInSegments();
+    setStatus('Finalizing live transcript stream...');
+    flushLiveBackendBuffer(true);
+    await liveBackendChain;
+
+    transcript = getLiveTranscriptSnapshot();
 
     if (!transcript) {
-      setStatus('Segment transcript empty, trying single-pass transcription...');
-      try {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        transcript = await transcribeAudio(audioBlob);
-        transcriptEl.value = transcript;
-      } catch (singlePassError) {
-        console.error(singlePassError);
-        const liveSnapshot = getLiveTranscriptSnapshot();
-        if (liveSnapshot) {
-          transcript = liveSnapshot;
-          transcriptEl.value = liveSnapshot;
-          setStatus('Using live transcript fallback due backend transcription connection issues...');
-          await wait(1200);
-        } else {
-          throw singlePassError;
-        }
-      }
+      setStatus('Live transcript empty, trying single-pass transcription...');
+      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+      transcript = await transcribeAudio(audioBlob);
+      transcriptEl.value = transcript;
     }
 
     setStatus('Generating notes...');
@@ -446,6 +426,17 @@ async function processRecording() {
     setStatus('Done. Notes ready to copy.');
   } catch (error) {
     console.error(error);
+
+    const fallbackTranscript = transcript || getLiveTranscriptSnapshot() || transcriptEl.value;
+
+    if (fallbackTranscript && fallbackTranscript.trim()) {
+      const fallbackNotes = buildFallbackNotes(fallbackTranscript, formatFetchError(error));
+      notesEl.textContent = fallbackNotes;
+      copyBtn.disabled = false;
+      setStatus('Summarization/transcription partially failed. Fallback notes are ready to copy.');
+      return;
+    }
+
     setStatus(`Processing failed: ${formatFetchError(error)}`);
   } finally {
     startBtn.disabled = false;
