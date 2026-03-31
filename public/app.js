@@ -17,6 +17,14 @@ let timerInterval;
 let seconds = 0;
 let recognition;
 let liveTranscriptFinal = '';
+let liveSpeechTranscript = '';
+let liveBackendTranscript = '';
+let liveBackendSequence = 0;
+let liveBackendBuffer = [];
+let liveBackendChain = Promise.resolve();
+
+const FINAL_BATCH_SIZE = 45;
+const LIVE_DESKTOP_BATCH_SIZE = 30;
 
 function resolveApiBase() {
   const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
@@ -28,6 +36,10 @@ const API_BASE = resolveApiBase();
 
 function apiUrl(pathname) {
   return API_BASE ? `${API_BASE}${pathname}` : pathname;
+}
+
+function renderLiveTranscript() {
+  transcriptEl.value = [liveSpeechTranscript, liveBackendTranscript].filter(Boolean).join('\n').trim();
 }
 
 function setStatus(text) {
@@ -52,6 +64,10 @@ function startTimer() {
 
 function stopTimer() {
   clearInterval(timerInterval);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatFetchError(error) {
@@ -145,7 +161,8 @@ function initSpeechRecognition() {
       }
     }
 
-    transcriptEl.value = `${liveTranscriptFinal} ${interim}`.trim();
+    liveSpeechTranscript = `${liveTranscriptFinal} ${interim}`.trim();
+    renderLiveTranscript();
   };
 
   recognition.onerror = () => {
@@ -241,6 +258,115 @@ async function transcribeAudio(audioBlob) {
   return data.transcript || '';
 }
 
+async function transcribeChunk(chunkBlob, sequence) {
+  const formData = new FormData();
+  formData.append('audio', chunkBlob, `final-segment-${sequence}.webm`);
+  formData.append('sequence', String(sequence));
+
+  const response = await fetch(apiUrl('/api/transcribe-chunk'), {
+    method: 'POST',
+    body: formData
+  });
+
+  const rawText = await response.text();
+  const data = parseJsonSafely(rawText);
+
+  if (!data) {
+    throw new Error(formatNonJsonApiError('/api/transcribe-chunk', rawText));
+  }
+
+  if (!response.ok) {
+    throw new Error(`${data.error || 'Segment transcription failed'} ${data.details || ''}`.trim());
+  }
+
+  return data.chunkTranscript || '';
+}
+
+async function transcribeChunkWithRetry(chunkBlob, sequence, maxAttempts = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await transcribeChunk(chunkBlob, sequence);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        setStatus(`Retrying segment ${sequence} (${attempt}/${maxAttempts - 1})...`);
+        await wait(800 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+function appendToTranscript(text) {
+  const clean = (text || '').trim();
+  if (!clean) {
+    return;
+  }
+
+  liveBackendTranscript = `${liveBackendTranscript}
+${clean}`.trim();
+  renderLiveTranscript();
+}
+
+function queueLiveBackendTranscription(blob) {
+  liveBackendSequence += 1;
+  const sequence = liveBackendSequence;
+
+  liveBackendChain = liveBackendChain
+    .then(async () => {
+      const text = await transcribeChunkWithRetry(blob, sequence, 2);
+      appendToTranscript(text);
+      setStatus('Live desktop/mixed-audio transcript updated...');
+    })
+    .catch((error) => {
+      console.error(error);
+      setStatus('Live desktop-audio transcription delayed; continuing.');
+    });
+
+  return liveBackendChain;
+}
+
+function flushLiveBackendBuffer(force = false) {
+  if (!force && liveBackendBuffer.length < LIVE_DESKTOP_BATCH_SIZE) {
+    return;
+  }
+
+  if (liveBackendBuffer.length === 0) {
+    return;
+  }
+
+  const blob = new Blob(liveBackendBuffer, { type: 'audio/webm' });
+  liveBackendBuffer = [];
+  queueLiveBackendTranscription(blob);
+}
+
+async function transcribeCapturedAudioInSegments() {
+  const segments = [];
+
+  for (let i = 0; i < chunks.length; i += FINAL_BATCH_SIZE) {
+    const group = chunks.slice(i, i + FINAL_BATCH_SIZE);
+    const segmentBlob = new Blob(group, { type: 'audio/webm' });
+    segments.push(segmentBlob);
+  }
+
+  const transcriptParts = [];
+
+  for (let i = 0; i < segments.length; i += 1) {
+    const sequence = i + 1;
+    setStatus(`Transcribing segment ${sequence}/${segments.length}...`);
+    const part = await transcribeChunkWithRetry(segments[i], sequence);
+    if (part.trim()) {
+      transcriptParts.push(part.trim());
+      transcriptEl.value = transcriptParts.join('\n');
+    }
+  }
+
+  return transcriptParts.join('\n').trim();
+}
+
 async function summarizeTranscript(transcript) {
   const response = await fetch(apiUrl('/api/summarize'), {
     method: 'POST',
@@ -275,10 +401,19 @@ async function processRecording() {
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    setStatus('Running full transcription from captured audio (mic + desktop)...');
-    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-    const transcript = await transcribeAudio(audioBlob);
-    transcriptEl.value = transcript;
+    if (chunks.length === 0) {
+      throw new Error('No audio captured. Please retry recording.');
+    }
+
+    setStatus('Finalizing transcript from captured meeting audio...');
+    let transcript = await transcribeCapturedAudioInSegments();
+
+    if (!transcript) {
+      setStatus('Segment transcript empty, trying single-pass transcription...');
+      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+      transcript = await transcribeAudio(audioBlob);
+      transcriptEl.value = transcript;
+    }
 
     setStatus('Generating notes...');
     const notes = await summarizeTranscript(transcript);
@@ -299,6 +434,11 @@ startBtn.addEventListener('click', async () => {
   try {
     chunks = [];
     liveTranscriptFinal = '';
+    liveSpeechTranscript = '';
+    liveBackendTranscript = '';
+    liveBackendSequence = 0;
+    liveBackendBuffer = [];
+    liveBackendChain = Promise.resolve();
     transcriptEl.value = '';
     notesEl.textContent = '';
     copyBtn.disabled = true;
@@ -309,11 +449,15 @@ startBtn.addEventListener('click', async () => {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunks.push(event.data);
+        liveBackendBuffer.push(event.data);
+        flushLiveBackendBuffer(false);
       }
     };
 
     mediaRecorder.onstop = async () => {
       stopSpeechRecognition();
+      flushLiveBackendBuffer(true);
+      await liveBackendChain;
       cleanupStreams();
       await processRecording();
     };
