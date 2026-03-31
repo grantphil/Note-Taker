@@ -70,6 +70,14 @@ async function ensureApiReachable() {
   if (!response.ok) {
     throw new Error('API health check failed.');
   }
+
+  const health = await response.json();
+
+  if (!health.apiKeyConfigured) {
+    throw new Error(
+      'Backend is reachable, but OPENAI_API_KEY is missing. Add OPENAI_API_KEY to backend env and restart.'
+    );
+  }
 }
 
 async function buildMixedStream() {

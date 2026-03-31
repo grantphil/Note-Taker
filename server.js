@@ -10,24 +10,46 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const port = process.env.PORT || 3000;
 const corsOrigin = process.env.CORS_ORIGIN || '*';
+const openAiApiKey = process.env.OPENAI_API_KEY || '';
+const hasApiKey = Boolean(openAiApiKey);
 
-if (!process.env.OPENAI_API_KEY) {
+if (!hasApiKey) {
   // eslint-disable-next-line no-console
-  console.warn('OPENAI_API_KEY is not set. API routes will fail until configured.');
+  console.warn('OPENAI_API_KEY is not set. Transcription and summarization will fail.');
 }
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new OpenAI({ apiKey: openAiApiKey });
 
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    apiKeyConfigured: hasApiKey
+  });
 });
+
+function ensureApiKey(res) {
+  if (hasApiKey) {
+    return true;
+  }
+
+  res.status(503).json({
+    error: 'OPENAI_API_KEY is missing on the backend server.',
+    details: 'Set OPENAI_API_KEY in your backend environment and restart the server.'
+  });
+
+  return false;
+}
 
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
+    if (!ensureApiKey(res)) {
+      return;
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file uploaded.' });
     }
@@ -54,6 +76,10 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
 app.post('/api/summarize', async (req, res) => {
   try {
+    if (!ensureApiKey(res)) {
+      return;
+    }
+
     const { transcript, meetingContext } = req.body;
 
     if (!transcript || !transcript.trim()) {

@@ -59,6 +59,29 @@ No API setup section is shown in the UI.
    ```
 5. Open `http://localhost:3000` and just hit record.
 
+## Exact requirements checklist (what you need)
+
+For the app to work end-to-end, all of these must be true:
+
+1. **Backend is running**
+   - Command: `npm start`
+   - Expected: server reachable at `http://localhost:3000` (or your hosted backend URL).
+
+2. **OpenAI API key is configured on backend**
+   - Env var required: `OPENAI_API_KEY`
+   - The app now checks this via `GET /api/health` (`apiKeyConfigured: true` is required).
+
+3. **Frontend can reach backend API**
+   - Local: open `http://localhost:3000` (same origin).
+   - GitHub Pages: set `window.NOTE_TAKER_API_BASE` in `public/config.js` **or** use `?api_base=https://your-backend-domain`.
+
+4. **CORS is allowed when cross-origin**
+   - Set backend env var: `CORS_ORIGIN=https://<your-github-username>.github.io`
+
+5. **Mic/system audio permissions are granted by browser**
+   - Allow microphone access when prompted.
+   - If capturing system audio, allow screen/tab share with audio.
+
 ## Deploying live with GitHub Pages + backend API
 
 GitHub Pages can host the frontend UI, but **not** the Node API server. You must deploy `server.js` to a Node host (Render, Railway, Fly.io, Azure, etc.), then point the Pages site to that backend.
