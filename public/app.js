@@ -15,6 +15,10 @@ let displayStream;
 let chunks = [];
 let timerInterval;
 let seconds = 0;
+let chunkSequence = 0;
+let chunkProcessingChain = Promise.resolve();
+
+const CHUNK_MS = 15000;
 
 function resolveApiBase() {
   const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
@@ -64,7 +68,6 @@ function formatFetchError(error) {
     'If using GitHub Pages, set window.NOTE_TAKER_API_BASE in public/config.js or use ?api_base=https://your-backend.'
   ].join(' ');
 }
-
 
 function parseJsonSafely(rawText) {
   try {
@@ -170,10 +173,53 @@ async function transcribeAudio(audioBlob) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Transcription failed');
+    throw new Error(`${data.error || 'Transcription failed'} ${data.details || ''}`.trim());
   }
 
   return data.transcript || '';
+}
+
+async function transcribeChunk(chunkBlob, sequence) {
+  const formData = new FormData();
+  formData.append('audio', chunkBlob, `chunk-${sequence}.webm`);
+  formData.append('sequence', String(sequence));
+
+  const response = await fetch(apiUrl('/api/transcribe-chunk'), {
+    method: 'POST',
+    body: formData
+  });
+
+  const rawText = await response.text();
+  const data = parseJsonSafely(rawText);
+
+  if (!data) {
+    throw new Error(formatNonJsonApiError('/api/transcribe-chunk', rawText));
+  }
+
+  if (!response.ok) {
+    throw new Error(`${data.error || 'Chunk transcription failed'} ${data.details || ''}`.trim());
+  }
+
+  return data.chunkTranscript || '';
+}
+
+function queueChunkTranscription(chunkBlob) {
+  const currentSequence = chunkSequence;
+
+  chunkProcessingChain = chunkProcessingChain
+    .then(async () => {
+      const chunkText = await transcribeChunk(chunkBlob, currentSequence);
+      if (chunkText.trim()) {
+        transcriptEl.value = `${transcriptEl.value}\n${chunkText}`.trim();
+      }
+      setStatus('Live transcription updated...');
+    })
+    .catch((error) => {
+      console.error(error);
+      setStatus(`Live transcription warning: ${formatFetchError(error)}`);
+    });
+
+  return chunkProcessingChain;
 }
 
 async function summarizeTranscript(transcript) {
@@ -194,7 +240,7 @@ async function summarizeTranscript(transcript) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Summarization failed');
+    throw new Error(`${data.error || 'Summarization failed'} ${data.details || ''}`.trim());
   }
 
   return data.notes || '';
@@ -210,10 +256,17 @@ async function processRecording() {
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    setStatus('Transcribing audio...');
-    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-    const transcript = await transcribeAudio(audioBlob);
-    transcriptEl.value = transcript;
+    setStatus('Finishing live transcription...');
+    await chunkProcessingChain;
+
+    let transcript = transcriptEl.value.trim();
+
+    if (!transcript) {
+      setStatus('Live transcript empty, running full transcription...');
+      const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+      transcript = await transcribeAudio(audioBlob);
+      transcriptEl.value = transcript;
+    }
 
     setStatus('Generating notes...');
     const notes = await summarizeTranscript(transcript);
@@ -233,6 +286,8 @@ async function processRecording() {
 startBtn.addEventListener('click', async () => {
   try {
     chunks = [];
+    chunkSequence = 0;
+    chunkProcessingChain = Promise.resolve();
     transcriptEl.value = '';
     notesEl.textContent = '';
     copyBtn.disabled = true;
@@ -243,6 +298,8 @@ startBtn.addEventListener('click', async () => {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunks.push(event.data);
+        chunkSequence += 1;
+        queueChunkTranscription(event.data);
       }
     };
 
@@ -251,10 +308,10 @@ startBtn.addEventListener('click', async () => {
       await processRecording();
     };
 
-    mediaRecorder.start(1000);
+    mediaRecorder.start(CHUNK_MS);
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    setStatus('Recording...');
+    setStatus('Recording + live transcription...');
     startTimer();
   } catch (error) {
     console.error(error);

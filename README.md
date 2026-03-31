@@ -9,8 +9,10 @@ The app now supports a **single primary flow**:
 1. Open app
 2. Click **Start Recording**
 3. Click **Stop Recording**
-4. Wait while it auto-transcribes + auto-generates notes
-5. Click **Copy Notes**
+4. Watch transcript populate live while recording
+5. Wait while it finalizes transcript + auto-generates notes
+6. Click **Copy Notes**
+
 
 No API setup section is shown in the UI.
 
@@ -18,7 +20,7 @@ No API setup section is shown in the UI.
 
 - Record microphone audio during live calls.
 - Optional attempt to capture system/tab audio (browser permission required).
-- Automatic transcription after recording stops.
+- Live transcription during recording in chunked intervals, with automatic finalize at stop.
 - Automatic AI note generation right after transcription.
 - AI-generated structured notes with:
   - Meeting snapshot
@@ -52,6 +54,7 @@ No API setup section is shown in the UI.
    OPENAI_API_KEY=your_key_here
    PORT=3000
    CORS_ORIGIN=*
+   TRANSCRIPTION_MODEL=whisper-1
    ```
 4. Start the app:
    ```bash

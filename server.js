@@ -12,6 +12,7 @@ const port = process.env.PORT || 3000;
 const corsOrigin = process.env.CORS_ORIGIN || '*';
 const openAiApiKey = process.env.OPENAI_API_KEY || '';
 const hasApiKey = Boolean(openAiApiKey);
+const transcriptionModel = process.env.TRANSCRIPTION_MODEL || 'whisper-1';
 
 if (!hasApiKey) {
   // eslint-disable-next-line no-console
@@ -44,6 +45,28 @@ function ensureApiKey(res) {
   return false;
 }
 
+async function transcribeBuffer(buffer, filename, mimetype) {
+  const file = new File([buffer], filename || 'meeting.webm', {
+    type: mimetype || 'audio/webm'
+  });
+
+  try {
+    return await client.audio.transcriptions.create({
+      file,
+      model: transcriptionModel
+    });
+  } catch (primaryError) {
+    if (transcriptionModel !== 'whisper-1') {
+      return client.audio.transcriptions.create({
+        file,
+        model: 'whisper-1'
+      });
+    }
+
+    throw primaryError;
+  }
+}
+
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
     if (!ensureApiKey(res)) {
@@ -54,14 +77,11 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio file uploaded.' });
     }
 
-    const file = new File([req.file.buffer], req.file.originalname || 'meeting.webm', {
-      type: req.file.mimetype || 'audio/webm'
-    });
-
-    const transcript = await client.audio.transcriptions.create({
-      file,
-      model: 'gpt-4o-mini-transcribe'
-    });
+    const transcript = await transcribeBuffer(
+      req.file.buffer,
+      req.file.originalname || 'meeting.webm',
+      req.file.mimetype || 'audio/webm'
+    );
 
     return res.json({ transcript: transcript.text });
   } catch (error) {
@@ -69,6 +89,36 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     console.error(error);
     return res.status(500).json({
       error: 'Failed to transcribe audio.',
+      details: error?.message || 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/transcribe-chunk', upload.single('audio'), async (req, res) => {
+  try {
+    if (!ensureApiKey(res)) {
+      return;
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No audio chunk uploaded.' });
+    }
+
+    const transcript = await transcribeBuffer(
+      req.file.buffer,
+      req.file.originalname || 'chunk.webm',
+      req.file.mimetype || 'audio/webm'
+    );
+
+    return res.json({
+      chunkTranscript: transcript.text,
+      sequence: req.body?.sequence || null
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(error);
+    return res.status(500).json({
+      error: 'Failed to transcribe audio chunk.',
       details: error?.message || 'Unknown error'
     });
   }
