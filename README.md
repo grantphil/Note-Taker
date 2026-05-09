@@ -23,6 +23,7 @@ No API setup section is shown in the UI.
 - Live browser speech transcript + live backend mixed-audio transcript during recording, then immediate note generation at stop.
 - Automatic AI note generation right after transcription.
 - If backend summarization fails, the app produces a copyable fallback note draft from captured transcript plus a ready-to-paste ChatGPT prompt.
+- After stop, live transcript finalization is capped at 2 minutes 30 seconds, then it proceeds with captured transcript so far.
 - AI-generated structured notes with:
   - Meeting snapshot
   - Key topics

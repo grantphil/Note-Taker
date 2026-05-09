@@ -22,9 +22,11 @@ let liveBackendTranscript = '';
 let liveBackendSequence = 0;
 let liveBackendBuffer = [];
 let liveBackendChain = Promise.resolve();
+let hasShownLiveDelayWarning = false;
 
 const FINAL_BATCH_SIZE = 45;
 const LIVE_DESKTOP_BATCH_SIZE = 4;
+const MAX_FINALIZE_WAIT_MS = 150000;
 
 function resolveApiBase() {
   const queryValue = new URLSearchParams(window.location.search).get('api_base') || '';
@@ -68,6 +70,15 @@ function stopTimer() {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForLiveChainWithTimeout() {
+  const result = await Promise.race([
+    liveBackendChain.then(() => 'completed'),
+    wait(MAX_FINALIZE_WAIT_MS).then(() => 'timeout')
+  ]);
+
+  return result;
 }
 
 function formatFetchError(error) {
@@ -291,7 +302,7 @@ async function transcribeChunkWithRetry(chunkBlob, sequence, maxAttempts = 3) {
     } catch (error) {
       lastError = error;
       if (attempt < maxAttempts) {
-        setStatus(`Retrying segment ${sequence} (${attempt}/${maxAttempts - 1})...`);
+        setStatus(`Retrying segment ${sequence} (attempt ${attempt + 1} of ${maxAttempts})...`);
         await wait(800 * attempt);
       }
     }
@@ -323,7 +334,10 @@ function queueLiveBackendTranscription(blob) {
     })
     .catch((error) => {
       console.error(error);
-      setStatus('Live desktop-audio transcription delayed; continuing.');
+      if (!hasShownLiveDelayWarning) {
+        hasShownLiveDelayWarning = true;
+        setStatus('Live desktop-audio transcription delayed; continuing with available transcript.');
+      }
     });
 
   return liveBackendChain;
@@ -405,9 +419,14 @@ async function processRecording() {
       throw new Error('No audio captured. Please retry recording.');
     }
 
-    setStatus('Finalizing live transcript stream...');
+    setStatus('Finalizing live transcript stream (up to 2m 30s)...');
     flushLiveBackendBuffer(true);
-    await liveBackendChain;
+    const finalizeState = await waitForLiveChainWithTimeout();
+
+    if (finalizeState === 'timeout') {
+      setStatus('Finalize timeout reached. Proceeding with transcript captured so far...');
+      hasShownLiveDelayWarning = true;
+    }
 
     transcript = getLiveTranscriptSnapshot();
 
@@ -453,6 +472,7 @@ startBtn.addEventListener('click', async () => {
     liveBackendSequence = 0;
     liveBackendBuffer = [];
     liveBackendChain = Promise.resolve();
+    hasShownLiveDelayWarning = false;
     transcriptEl.value = '';
     notesEl.textContent = '';
     copyBtn.disabled = true;
